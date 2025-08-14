@@ -31,7 +31,7 @@ jobs:
           SS_PASSWORD="YourStrongPasswordHere123"
           SS_PORT="8388"
           # Самый современный и безопасный метод шифрования
-          SS_METHOD="2022-blake3-aes-128-gcm"
+          SS_METHOD="chacha20-ietf-poly1305"
           
           # --- Создаем конфиг для shadowsocks-libev ---
           cat << EOF > ss-config.json
@@ -56,7 +56,7 @@ jobs:
           # --- ВСТАВЬ СЮДА СВОИ ДАННЫЕ ---
           DOMAIN="vpn.iksdev.live" # !!! ЗАМЕНИ НА СВОЙ ДОМЕН ИЗ CLOUDFLARE !!!
           SS_PASSWORD="YourStrongPasswordHere123" # !!! Пароль должен совпадать с тем, что выше !!!
-          SS_METHOD="2022-blake3-aes-128-gcm"
+          SS_METHOD="chacha20-ietf-poly1305"
 
           # --- Формируем SS URI и QR-код ---
           # Кодируем method:password в Base64
