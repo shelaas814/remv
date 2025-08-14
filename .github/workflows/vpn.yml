@@ -1,8 +1,8 @@
-name: Shadowsocks Server (Static & Auto-Restart)
+name: Shadowsocks Server (Final Version)
 
 on:
-  workflow_dispatch: # Позволяет запускать вручную
-  repository_dispatch: # Для авторестарта
+  workflow_dispatch:
+  repository_dispatch:
     types: [restart-shadowsocks]
 
 jobs:
@@ -11,41 +11,31 @@ jobs:
     timeout-minutes: 350 # 5 часов 50 минут
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
       - name: Install Dependencies
         run: |
-          # Устанавливаем shadowsocks-libev и qrencode для QR-кода
           sudo apt-get update
-          sudo apt-get install -y shadowsocks-libev qrencode
-
-          # Скачиваем Cloudflared
+          sudo apt-get install -y shadowsocks-libev qrencode lsof
           wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
           chmod +x cloudflared-linux-amd64
 
       - name: Generate Config and Run Services
         run: |
-          # --- СТАТИЧЕСКИЕ ДАННЫЕ ДЛЯ ВЕЧНОГО КОНФИГА ---
-          # !!! Можешь заменить пароль и порт на свои, если хочешь !!!
+          # --- ДАННЫЕ ДЛЯ СЕРВЕРА ---
+          # !!! ЗАМЕНИ ПАРОЛЬ НА СВОЙ !!!
           SS_PASSWORD="YourStrongPasswordHere123"
           SS_PORT="8388"
-          # Самый современный и безопасный метод шифрования
           SS_METHOD="chacha20-ietf-poly1305"
           
-          # --- Создаем конфиг для shadowsocks-libev ---
+          # Создаем конфиг
           cat << EOF > ss-config.json
-          {
-              "server":"0.0.0.0",
-              "server_port":${SS_PORT},
-              "password":"${SS_PASSWORD}",
-              "method":"${SS_METHOD}",
-              "fast_open":true,
-              "mode":"tcp_only"
-          }
+          { "server":"0.0.0.0", "server_port":${SS_PORT}, "password":"${SS_PASSWORD}", "method":"${SS_METHOD}", "fast_open":true, "mode":"tcp_only" }
           EOF
 
-          # --- Запускаем Shadowsocks и Cloudflared в фоновом режиме ---
+          # Принудительно освобождаем порт перед запуском, чтобы избежать ошибки "Address already in use"
+          sudo kill -9 $(sudo lsof -t -i:${SS_PORT}) 2>/dev/null || true
+          sleep 2 # Даем время порту освободиться
+
+          # Запускаем Shadowsocks и Cloudflared
           nohup ss-server -c ss-config.json &
           sleep 5
           nohup ./cloudflared-linux-amd64 tunnel run --token ${{ secrets.CF_TUNNEL_TOKEN }} &
@@ -53,29 +43,31 @@ jobs:
 
       - name: Display Connection Info
         run: |
-          # --- ВСТАВЬ СЮДА СВОИ ДАННЫЕ ---
-          DOMAIN="vpn.iksdev.live" # !!! ЗАМЕНИ НА СВОЙ ДОМЕН ИЗ CLOUDFLARE !!!
-          SS_PASSWORD="YourStrongPasswordHere123" # !!! Пароль должен совпадать с тем, что выше !!!
-          SS_METHOD="chacha20-ietf-poly1305"
+          # --- ДАННЫЕ ДЛЯ КЛИЕНТА ---
+          # !!! ЗАМЕНИ ЭТИ ДАННЫЕ НА СВОИ !!!
+          DOMAIN="vpn.iksdev.live"
+          SS_PASSWORD="YourStrongPasswordHere123"
 
-          # --- Формируем SS URI и QR-код ---
-          # Кодируем method:password в Base64
+          # Убедись, что пароль здесь ТОЧНО СОВПАДАЕТ с паролем из шага выше!
+          SS_METHOD="chacha20-ietf-poly1305"
+          
+          # Формируем SS URI
           SIP002_URI_PART=$(echo -n "${SS_METHOD}:${SS_PASSWORD}" | base64 | tr -d '\n')
-          ss_uri="ss://${sip002_uri_part}@${domain}:443#github-shadowsocks"
+          SS_URI="ss://${SIP002_URI_PART}@${DOMAIN}:443#GitHub-Shadowsocks"
           
           echo "========================================================================="
           echo "STATIC SHADOWSOCKS Server is ready! This config is permanent."
-          echo "It will restart automatically every ~6 hours."
           echo ""
           echo "--- Connection Details ---"
           echo "Server Address: ${DOMAIN}"
+          echo "Port: 443"
           echo "Password: ${SS_PASSWORD}"
           echo "Encryption Method: ${SS_METHOD}"
           echo ""
-          echo "--- SS URI (copy this and import in your client) ---"
+          echo "--- SS URI (copy this and import) ---"
           echo "${SS_URI}"
           echo ""
-          echo "--- QR Code (SCAN THIS ONCE, IT WILL NOT CHANGE) ---"
+          echo "--- QR Code (scan this once) ---"
           qrencode -t ansiutf8 "${SS_URI}"
           echo "========================================================================="
           
@@ -84,9 +76,12 @@ jobs:
           sleep 20700 # ~5 часов 45 минут
 
       - name: Trigger Next Run (Auto-Restart)
-        if: always()
+        # --- ГЛАВНОЕ ИЗМЕНЕНИЕ ---
+        # Этот шаг сработает, ТОЛЬКО ЕСЛИ предыдущие шаги были успешными.
+        # Он НЕ сработает, если ты нажмешь "Cancel" или если будет ошибка.
+        if: success()
         run: |
-          echo "Triggering Shadowsocks restart..."
+          echo "Workflow completed successfully. Triggering next run..."
           curl -L \
             -X POST \
             -H "Accept: application/vnd.github.v3+json" \
